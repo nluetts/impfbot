@@ -10,6 +10,10 @@ settings = __import__(__name__)
 
 log = logging.getLogger()
 
+from common import GOOD_PLZ
+from config_generator import start_config_generation
+
+log = logging.getLogger(__name__)
 
 class ParseExeption(BaseException):
     pass
