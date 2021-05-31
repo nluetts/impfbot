@@ -1,4 +1,3 @@
-from datetime import datetime
 import sys
 import argparse
 from log import log
@@ -7,33 +6,35 @@ import alerts
 
 import api_wrapper
 
-from common import sleep, sleep_until, is_night
+from common import sleep, sleep_until, is_night, datetime2timestamp
 
 
 def check_for_slot() -> None:
     try:
+        birthdate_timestamp = datetime2timestamp(settings.BIRTHDATE)
         result = api_wrapper.fetch_api(
             plz=settings.ZIP,
-            birthdate_timestamp=int(
-                datetime.now().timestamp() -
-                (datetime.now() - settings.BIRTHDATE).total_seconds()),
+            birthdate_timestamp=birthdate_timestamp,
             max_retries=10,
-            sleep_after_error=settings.SLEEP_BETWEEN_FAILED_REQUESTS_IN_S,
-            sleep_after_shadowban=settings.SLEEP_AFTER_DETECTED_SHADOWBAN_IN_MIN,
-            user_agent=settings.USER_AGENT
-        )
+            sleep_after_error=settings.COOLDOWN_BETWEEN_FAILED_REQUESTS_IN_S,
+            sleep_after_shadowban=settings.COOLDOWN_AFTER_DETECTED_SHADOWBAN_IN_S,
+            user_agent=settings.USER_AGENT)
+
         if not result:
             log.error("Result is emtpy. (Invalid ZIP Code (PLZ)?)")
         for elem in result:
             if not elem['outOfStock']:
+                free_slots = elem['freeSlotSizeOnline']
+                vaccine_name = elem['vaccineName']
+                vaccine_type = elem['vaccineType']
                 log.info(
-                    f"Free slot! ({elem['freeSlotSizeOnline']}) {elem['vaccineName']}/{elem['vaccineType']}")
+                    f"Free slot! (%s) {vaccine_name}/{vaccine_type}")
 
-                msg = f"Freier Impfslot ({elem['freeSlotSizeOnline']})! {elem['vaccineName']}/{elem['vaccineType']}"
+                msg = f"Freier Impfslot ({free_slots})! {vaccine_name}/{vaccine_type}"
 
                 alerts.alert(msg)
 
-                sleep(settings.COOLDOWN_AFTER_FOUND_IN_MIN, 0)
+                sleep(settings.COOLDOWN_AFTER_SUCCESS_IN_S, 0)
             else:
                 log.info("No free slot.")
     except Exception as e:
@@ -44,8 +45,11 @@ if __name__ == "__main__":
     try:
         parser = argparse.ArgumentParser(
             description='Notification bot for the lower saxony vaccination portal ')
-        parser.add_argument('-f', '-c', '--config', dest='configfile',
-                            help='Path to config.ini file', required=False, default='config.ini')
+        parser.add_argument('-f', '-c', '--config',
+                            dest='configfile',
+                            help='Path to config.ini file',
+                            required=False,
+                            default='config.ini')
         arg = vars(parser.parse_args())
 
         try:
@@ -53,8 +57,6 @@ if __name__ == "__main__":
         except (settings.ParseExeption, FileNotFoundError) as e:
             log.error(e)
             sys.exit(1)
-        except settings.ParseRuntimeExeption as e:
-            log.warning(e)
         except Exception as e:
             log.warning(e)
 
@@ -64,7 +66,7 @@ if __name__ == "__main__":
                 sleep_until(hour=7, minute=0)
 
             check_for_slot()
-            sleep(settings.SLEEP_BETWEEN_REQUESTS_IN_S, settings.JITTER)
+            sleep(settings.COOLDOWN_BETWEEN_REQUESTS_IN_S, settings.JITTER)
 
     except (KeyboardInterrupt, SystemExit):
         print("Bye...")
